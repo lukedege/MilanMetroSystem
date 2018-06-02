@@ -1,0 +1,262 @@
+<html>
+	<head>
+		<!-- Luca Di Gennaro 820612-->
+		<meta charset="ISO-8859-1">
+		<title>Milan Metro System</title>
+	
+		<style>
+			@charset "ISO-8859-1";
+
+			ul
+			{
+				list-style-type: none;
+			}
+			
+			.container
+			{
+				background-color: #CCC;
+				padding: 5px;
+				margin: 5px;
+				border-radius: 5px;
+			}
+
+			.bold
+			{
+				font-weight: bold;
+			}
+			
+			#map
+			{
+				height:800px;
+			}
+		</style>
+		<link rel="stylesheet" type="text/css" href="http://js.api.here.com/v3/3.0/mapsjs-ui.css" />
+		
+		<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+		
+		<script type="text/javascript" src="https://js.cit.api.here.com/v3/3.0/mapsjs-core.js"></script>
+		<script type="text/javascript" src="https://js.cit.api.here.com/v3/3.0/mapsjs-service.js"></script>
+		<script type="text/javascript" src="https://js.cit.api.here.com/v3/3.0/mapsjs-ui.js"></script>
+		<script type="text/javascript" src="https://js.cit.api.here.com/v3/3.0/mapsjs-mapevents.js"></script>
+		
+		
+		<script type="text/javascript">
+			var dbPediaUrl = "http://dbpedia.org/sparql?default-graph-uri=http://dbpedia.org&query=";
+			var wikidataUrl = 'https://query.wikidata.org/sparql';
+			
+			var markerGroups = [];
+			var svgMapMarkers = [];
+			
+			//per forzare l'aggiornamento
+			$.ajaxSetup({ cache: false });
+			
+			//Point(9.2015 45.470981)
+			var parsePoint = function(pointString)
+			{
+				var cleanString = pointString.substring(6, pointString.length-1);
+				
+				return cleanString.split(" ");
+			}
+			
+			var generateSvgMarkers = function()
+			{
+				var svgMapMarkers = [];
+				var j = 1;
+				
+				var endpointUrl = 'https://query.wikidata.org/sparql',
+				sparqlQuery = "SELECT ?lineLabel ?coloreHex WHERE {\n" +
+					"  SERVICE wikibase:label { bd:serviceParam wikibase:language \"[AUTO_LANGUAGE],en\". }\n" +
+					"  ?line wdt:P361 wd:Q735559.\n" +
+					"  ?line wdt:P31 wd:Q15079663.\n" +
+					"  ?line p:P462 ?colore.\n" +
+					"  OPTIONAL { ?colore pq:P465 ?coloreHex. }\n" +
+					"}\n" +
+					"ORDER BY ASC(?lineLabel)",
+				settings = {
+					headers: { Accept: 'application/sparql-results+json' },
+					data: { query: sparqlQuery }
+				};
+				
+				$.ajax( endpointUrl, settings ).then( function ( data ) {
+					$.each(data.results.bindings, function(i,row){
+							svgMapMarkers[j] = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="Capa_1" x="0px" y="0px" width="32px" height="32px" viewBox="0 0 512 512" style="enable-background:new 0 0 512 512;" xml:space="preserve" class=""><g><g>'+
+												'<path d="M256,0C167.641,0,96,71.625,96,160c0,24.75,5.625,48.219,15.672,69.125C112.234,230.313,256,512,256,512l142.594-279.375   C409.719,210.844,416,186.156,416,160C416,71.625,344.375,0,256,0z M256,256c-53.016,0-96-43-96-96s42.984-96,96-96   c53,0,96,43,96,96S309,256,256,256z" data-original="#000000" class="active-path" data-old_color="#C57FB6" fill="#'+row.coloreHex.value+'"/>'+
+												'</g></g> </svg>';
+							j++;
+					});
+				} );
+				
+				return svgMapMarkers;
+			}
+			
+			svgMapMarkers = generateSvgMarkers();
+			
+			$(document).ready(function() {
+				//IMPOSTAZIONI MAPPA
+				var platform = new H.service.Platform({
+					app_id: 'MOyy0cASapIeKoVduBjU',
+					app_code: 'V9Sa5syBwCXWAmZDx9Z-2w',
+					useCIT: true
+				});
+			
+				// Obtain the default map types from the platform object:
+				var defaultLayers = platform.createDefaultLayers();
+
+				// Instantiate (and display) a map object:
+				var map = new H.Map(
+					document.getElementById('map'),
+					defaultLayers.normal.map,
+					{
+						zoom: 11.65,
+						center: { lat: 45.46, lng: 9.2 }
+					});
+					
+				var behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));	
+				
+				// Create the default UI:
+				var ui = H.ui.UI.createDefault(map, defaultLayers);
+
+
+				//--------------------------
+				//         DISPLAY
+				//--------------------------
+				
+				$(document).on('click', '.metroLine', function(){ //oppure quando clicco sull'omonimo button
+		  			var correctContainer = "#"+$(this).attr("id")+"Info";
+					var correctLine = parseInt($(this).attr("id")[1])-1;
+					
+					$(".metroLineInfo").hide(); //nascondo tutti
+					$(correctContainer).fadeIn(); //mostro quello richiesto
+					
+					if(correctLine == -1)
+					{
+						markerGroups.forEach(function(group) {
+							group.setVisibility(true);
+						});
+					}
+					else
+					{
+						markerGroups.forEach(function(group) {
+							group.setVisibility(false);
+						});
+					
+						markerGroups[correctLine].setVisibility(true);
+					}
+		  		});
+				
+				
+				//--------------------------
+				//      MAPCONTAINER
+				//--------------------------
+				var retrieveLineInfo = function(URI, line)
+				{
+					// Create a group that can hold map objects:
+					var group = new H.map.Group();
+
+					// Add the group to the map object (created earlier):
+					map.addObject(group);
+					//URI = "http://www.wikidata.org/entity/Q2400801"
+
+					var sparqlQuery = "SELECT ?coordinate_geografiche ?immagine ?label WHERE {\n" +
+									"  SERVICE wikibase:label { bd:serviceParam wikibase:language \"[AUTO_LANGUAGE],it\". }\n" +
+									"  ?stazione wdt:P81 wd:"+URI.substring(31,URI.length)+".\n" +
+									"  ?stazione rdfs:label ?label .\n" +
+									"  OPTIONAL { ?stazione wdt:P625 ?coordinate_geografiche. }\n" +
+									"  OPTIONAL { ?stazione wdt:P18 ?immagine. }\n" +
+									"  FILTER ( 'it' =  lang( ?label) )\n" +
+									"}",
+					settings = {
+						headers: { Accept: 'application/sparql-results+json' },
+						data: { query: sparqlQuery }
+					};
+					
+					var coordinates = [];
+					var stationInfo = "";	
+					
+					$.ajax( wikidataUrl, settings ).then( function ( data ) {
+						$.each(data.results.bindings, function(i,row){
+							
+							// Create a marker:
+							if(row.hasOwnProperty("coordinate_geografiche"))
+							{
+								stationInfo = "";
+							
+								coordinates = parsePoint(row.coordinate_geografiche.value);
+								marker = new H.map.Marker({ lat: coordinates[1], lng: coordinates[0] });
+								marker.setIcon(new H.map.Icon(svgMapMarkers[line[1]]));
+							
+							
+								if(row.hasOwnProperty("label"))
+									stationInfo += "<span id=stationTitle>"+row.label.value+"</span>";
+									
+								if(row.hasOwnProperty("immagine"))
+									stationInfo += "<img src="+row.immagine.value+" width=300px height=300px></img>";
+									
+								marker.setData(stationInfo);
+								
+								group.addObject(marker);
+							}
+							
+						}); // end each
+						
+						//aggiunta listener per infobubble
+						group.addEventListener('tap', function (evt) {
+									var bubble =  new H.ui.InfoBubble(evt.target.getPosition(), {
+									  // read custom data
+									  content: evt.target.getData()
+									});
+									// show info bubble
+									ui.addBubble(bubble);
+								}, false);
+					});
+					markerGroups.push(group);
+					
+				};
+				
+				//CODICE ESEGUITO SUBITO
+				
+				var queryLinee = "SELECT  ?name ?desc ?wikidataId where "+
+									"{  ?station dct:subject <http://dbpedia.org/resource/Category:Milan_metro_lines> ;"+
+										"rdfs:label ?name ;"+
+										"rdfs:comment ?desc ;"+
+										"owl:sameAs ?wikidataId ."+
+									"FILTER ( 'it' =  lang( ?name) )"+
+									"FILTER ( 'it' =  lang( ?desc) )"+
+									"FILTER ( contains( str( ?wikidataId), 'wikidata.org')) }"+
+								"ORDER BY  ASC ( ?name)"
+				var options = "&debug=on&timeout=&format=json&save=display&fname=";
+				var ajaxURL = dbPediaUrl + encodeURI(queryLinee) + options;
+				
+				var currentLine;
+		
+				$.getJSON(ajaxURL, {}, function(data) {
+					$.each(data.results.bindings, function(i,row){
+						currentLine = row.name.value[6]+row.name.value[7];
+						$("#lines").append("<button id="+currentLine+" class=metroLine>" + row.name.value + "</button> ");
+						$("#infoContainer").append("<div id="+currentLine+"Info  class=metroLineInfo>" + row.desc.value + "</div>");
+						retrieveLineInfo(row.wikidataId.value, currentLine);
+					}); // end each
+					$(".metroLineInfo").hide();
+				}); // end get JSON 	
+				$("#lines").append("<button id=M0 class=metroLine> Mostra tutte le linee</button> ");		
+			});
+			
+		</script>
+		
+		
+	</head>
+	
+	<body>
+		<h1>Milan Metro System</h1>
+		
+	 	<div id = "mainContainer" class = "container">
+	   		<div id = "lines"> </div>
+			<ul id = "stations"> </ul>
+			<div id = "infoContainer" class = "container"></div>
+			<div id = "map"></div>
+	  	</div>
+		
+		
+	  	
+	</body>
+</html>
